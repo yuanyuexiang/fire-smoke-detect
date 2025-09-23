@@ -1,31 +1,3 @@
-## fire-smoke-detect-yolov4-v5 and fire-smoke-detect-dataset
-
-* author is leilei
-* [**README_ZN 中文版说明**](./readmes/README_ZN.md)
-* [**README_EN English Description**](./readmes/README_EN.md)
-* [**yolov4 tensorrt python inference**](https://github.com/gengyanlei/onnx2tensorRt)
-* [**Note: 百度Paddle智慧城市生态使用本人烟火检测数据集(PS:明明是我的数据还要感谢别人一下)**](https://github.com/PaddlePaddle/awesome-DeepLearning/tree/master/Paddle_Industry_Practice_Sample_Library/Fire_and_Smoke_Detection)
-
-* This repository code has stopped updating, please use the dataset to retrain the detection model directly!
-* This repository code has stopped updating, please use the dataset to retrain the detection model directly!
-* This repository code has stopped updating, please use the dataset to retrain the detection model directly!
-
-### fire-smoke-detect-demo
-|![fire-smoke-detect-demo](./result/result_demo.jpg)|
-|----|
-
-### Data Label Tool
-+ [CVAT](https://github.com/openvinotoolkit/cvat)
-+ [CVAT-Tutorial](https://blog.csdn.net/LEILEI18A/article/details/113385510)
-
-### Other
-* [leilei's blog](https://blog.csdn.net/LEILEI18A/article/details/107334474)
-* [VSCode Remote SSH 安装教程](https://blog.csdn.net/LEILEI18A/article/details/102524181)
-* [segmentation_pytorch 语义分割](https://github.com/gengyanlei/segmentation_pytorch)
-* [building-segmentation-dataset 遥感影像建筑语义分割](https://github.com/gengyanlei/build_segmentation_dataset)
-* [reflective-clothes-detect-dataset 安全帽反光衣检测](https://github.com/gengyanlei/reflective-clothes-detect)
-
-
 ## YOLOv5 检测使用方法
 
 ### 本地摄像头检测
@@ -106,10 +78,34 @@ python3 detect.py --source 0 --weights ./best.pt --device cpu --img-size 416 --c
 ### RKNN加速（推荐，性能提升5-10倍）
 ```bash
 # 安装RKNN工具包 (在RK3588上操作)
-# 1. 下载RKNN Toolkit2
-wget https://github.com/rockchip-linux/rknn-toolkit2/releases/download/v1.5.2/rknn_toolkit2-1.5.2+b642f30c-cp38-cp38-linux_aarch64.whl
-pip3 install rknn_toolkit2-1.5.2+b642f30c-cp38-cp38-linux_aarch64.whl
+# 🚨 重要更新：官方仓库已迁移到 airockchip/rknn-toolkit2
+# 1. 最新版本 v2.3.2 - 下载RKNN Toolkit2 (支持Python 3.6-3.12)
 
+# 方法1：直接通过pip安装 (推荐，v2.2.0+支持)
+pip3 install rknn-toolkit2
+
+# 方法2：手动下载安装 (如果pip安装失败)
+# Python 3.8
+wget https://github.com/airockchip/rknn-toolkit2/releases/download/v2.3.2/rknn_toolkit2-2.3.2+81f21f4d-cp38-cp38-linux_aarch64.whl
+pip3 install rknn_toolkit2-2.3.2+81f21f4d-cp38-cp38-linux_aarch64.whl
+
+# Python 3.9  
+wget https://github.com/airockchip/rknn-toolkit2/releases/download/v2.3.2/rknn_toolkit2-2.3.2+81f21f4d-cp39-cp39-linux_aarch64.whl
+pip3 install rknn_toolkit2-2.3.2+81f21f4d-cp39-cp39-linux_aarch64.whl
+
+# Python 3.10
+wget https://github.com/airockchip/rknn-toolkit2/releases/download/v2.3.2/rknn_toolkit2-2.3.2+81f21f4d-cp310-cp310-linux_aarch64.whl
+pip3 install rknn_toolkit2-2.3.2+81f21f4d-cp310-cp310-linux_aarch64.whl
+
+# Python 3.11
+wget https://github.com/airockchip/rknn-toolkit2/releases/download/v2.3.2/rknn_toolkit2-2.3.2+81f21f4d-cp311-cp311-linux_aarch64.whl
+pip3 install rknn_toolkit2-2.3.2+81f21f4d-cp311-cp311-linux_aarch64.whl
+
+# Python 3.12
+wget https://github.com/airockchip/rknn-toolkit2/releases/download/v2.3.2/rknn_toolkit2-2.3.2+81f21f4d-cp312-cp312-linux_aarch64.whl
+pip3 install rknn_toolkit2-2.3.2+81f21f4d-cp312-cp312-linux_aarch64.whl
+
+# 模型转换流程：PyTorch → ONNX → RKNN
 # 2. 转换PyTorch模型为RKNN格式（NPU加速）
 python3 convert_to_rknn.py --input ./best.pt --output ./rknn_models
 
@@ -122,6 +118,21 @@ python3 detect_rknn.py --source "rtsp://admin:matrix@192.168.86.32:554/Streaming
 # 5. 无GUI版本（适合SSH连接）+ NPU加速
 python3 detect_rknn.py --source 0 --weights ./rknn_models/best.rknn --conf 0.4 --save-vid --no-display
 ```
+
+### RKNN Toolkit2 v2.3.2 新特性
+- ✅ **支持Python 3.6-3.12** (包括最新的3.12版本)
+- ✅ **pip直接安装**: `pip3 install rknn-toolkit2`
+- ✅ **ARM64架构支持**: 可直接在RK3588上运行转换
+- ✅ **自动混合精度**: 更好的性能和精度平衡
+- ✅ **增强的算子支持**: LayerNorm, LSTM, Transpose, MatMul等
+- ✅ **W4A16量化**: RK3576平台支持4位权重16位激活
+- ✅ **Flash Attention**: RK3562/RK3576支持
+
+### 官方资源链接
+- **新官方仓库**: https://github.com/airockchip/rknn-toolkit2
+- **模型库**: https://github.com/airockchip/rknn_model_zoo  
+- **RKNN LLM**: https://github.com/airockchip/rknn-llm
+- **完整SDK**: https://console.zbox.filez.com/l/I00fc3
 
 ### 性能对比
 | 推理方式 | FPS | 功耗 | 延迟 |
@@ -172,11 +183,21 @@ chmod +x deploy_rk3588.sh rk3588_manager.sh
 # 测试功能
 ./rk3588_manager.sh test       # 测试本地摄像头
 ./rk3588_manager.sh test-rtsp  # 测试RTSP摄像头
+./rk3588_manager.sh test-rknn  # 测试NPU加速模型
+
+# 模型转换与管理
+./rk3588_manager.sh convert    # 转换模型到RKNN格式
+./rk3588_manager.sh install    # 安装完整环境
 
 # 配置管理
 ./rk3588_manager.sh config     # 编辑配置
 ./rk3588_manager.sh uninstall  # 卸载服务
 ```
+
+### 技术支持与社区
+- **官方技术支持**: https://redmine.rock-chips.com/
+- **QQ技术群**: 958083853 (最新群4)  
+- **GitHub Issues**: https://github.com/airockchip/rknn-toolkit2/issues
 
 ### 性能调优建议
 - **CPU绑定**: 使用`taskset`将进程绑定到特定CPU核心

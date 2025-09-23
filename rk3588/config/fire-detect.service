@@ -1,0 +1,25 @@
+[Unit]
+Description=RK3588 Fire Detection Service
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+User=root
+WorkingDirectory=/home/root/fire-smoke-detect/yolov5
+Environment=PATH=/home/root/fire-detect-env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/root/fire-detect-env/bin/python3 /home/root/fire-smoke-detect/yolov5/detect_rknn.py --source rtsp://admin:matrix@192.168.86.32:554/Streaming/Channels/102 --weights ./rknn_models/best.rknn --conf 0.5 --save-vid --no-display
+
+# 日志设置
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fire-detection
+
+# 安全设置
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
