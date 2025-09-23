@@ -1,0 +1,32 @@
+# RKNN模型转换环境依赖 - 精简版
+# 只包含模型转换必需的包，不需要CUDA
+
+# PyTorch (CPU版本，足够用于模型转换)
+torch>=1.10.0 --index-url https://download.pytorch.org/whl/cpu
+torchvision>=0.11.0 --index-url https://download.pytorch.org/whl/cpu
+
+# ONNX相关 (模型转换核心)
+onnx==1.16.1
+onnxruntime>=1.16.0
+
+# RKNN工具包 (需要手动安装对应架构的wheel文件)
+# rknn-toolkit2==2.3.2
+
+# 基础科学计算包
+numpy>=1.20.0,<2.0.0
+pillow>=8.2.0
+
+# 配置文件处理
+pyyaml>=5.3.1
+
+# 进度显示
+tqdm>=4.41.0
+
+# 系统工具
+psutil>=5.9.0
+
+# 模型分析工具 (可选)
+# thop  # FLOPs计算，如果不需要可以注释掉
+
+# 协议缓冲区 (ONNX需要)
+protobuf>=3.20.0,<4.0.0

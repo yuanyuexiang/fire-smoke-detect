@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-RK3588 RKNN模型推理脚本
+RK3588 RKNN模型推理脚本 - 使用预转换的最终模型
 使用NPU加速进行火灾烟雾检测
+模型文件: best_final_clean.rknn (已优化，无需转换)
 """
 
 import cv2
@@ -268,7 +269,7 @@ class RKNNFireDetector:
 def main():
     parser = argparse.ArgumentParser(description='RK3588 NPU火灾烟雾检测')
     parser.add_argument('--source', type=str, default='0', help='输入源')
-    parser.add_argument('--weights', type=str, default='./rknn_models/best.rknn', help='RKNN模型路径')
+    parser.add_argument('--weights', type=str, default='./models/best_final_clean.rknn', help='RKNN模型路径')
     parser.add_argument('--conf', type=float, default=0.4, help='置信度阈值')
     parser.add_argument('--nms', type=float, default=0.5, help='NMS阈值')
     parser.add_argument('--save-vid', action='store_true', help='保存检测视频')

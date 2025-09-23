@@ -1,22 +1,18 @@
-# RK3588 火烟检测系统依赖包
+# RK3588 火烟检测系统依赖包 - 生产运行版本
 # Python 3.8+ required
+# 注意: 本版本使用预转换模型，无需torch等转换依赖
 
-# 基础科学计算库
+# 基础依赖
 numpy>=1.20.0,<2.0.0
 opencv-python==4.8.1.78
 pillow>=8.2.0
+
+# 可选依赖 (用于监控和日志)
 matplotlib>=3.3.0
-seaborn>=0.11.0
-
-# YOLOv5相关依赖
-torch>=1.9.0
-torchvision>=0.10.0
 tqdm>=4.41.0
-pyyaml>=5.3.1
-pandas>=1.1.4
 
-# RKNN工具链 (在RK3588上安装)
-# rknn-toolkit2>=2.3.0  # 将通过脚本安装特定版本
+# RKNN运行时 (在RK3588上通过脚本安装)
+# rknn-toolkit2-lite  # 仅运行时，不包含转换功能
 
 # 其他工具
 psutil>=5.8.0  # 系统监控
