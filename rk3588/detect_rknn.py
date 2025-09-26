@@ -160,26 +160,26 @@ class RKNNFireDetector:
         return input_image
     
     def postprocess(self, outputs, original_shape):
-        """后处理，解析RKNN输出 - 优化版本"""
+        """后处理，解析RKNN输出 - YOLOv5特征图格式"""
         try:
             # 调试输出格式信息
-            if hasattr(self, '_first_run'):
-                pass  # 只在第一次运行时显示
-            else:
-                print(f"🔍 调试信息:")
-                print(f"   outputs类型: {type(outputs)}")
-                print(f"   outputs长度: {len(outputs)}")
-                if len(outputs) > 0:
-                    print(f"   第一个输出形状: {outputs[0].shape}")
-                    print(f"   第一个输出类型: {type(outputs[0])}")
+            if not hasattr(self, '_first_run'):
+                print(f"🔍 模型输出格式:")
+                print(f"   形状: {outputs[0].shape}")
+                print(f"   数据类型: {outputs[0].dtype}")
                 self._first_run = True
             
-            # YOLOv5输出通常是 (1, 25200, 85) 或类似格式
-            predictions = outputs[0]
+            # YOLOv5输出格式: (1, 85, 20, 20) 
+            # 这是特征图格式，需要进行anchor-based解码
+            feature_map = outputs[0]  # (1, 85, 20, 20)
             
-            # 如果是3D数组，取第一个batch
-            if len(predictions.shape) == 3:
-                predictions = predictions[0]  # 去掉batch维度
+            # 移除batch维度
+            if len(feature_map.shape) == 4:
+                feature_map = feature_map[0]  # (85, 20, 20)
+            
+            num_classes = 2  # fire, smoke
+            grid_h, grid_w = feature_map.shape[1], feature_map.shape[2]
+            num_channels = feature_map.shape[0]  # 85
             
             # 解析预测结果
             boxes = []
@@ -187,49 +187,99 @@ class RKNNFireDetector:
             class_ids = []
             
             h, w = original_shape[:2]
-            x_scale = w / self.input_size[0]
-            y_scale = h / self.input_size[1]
+            x_scale = w / self.input_size[0]  # 640
+            y_scale = h / self.input_size[1]  # 640
             
-            # 安全的数组处理
-            for i, detection in enumerate(predictions):
-                try:
-                    # 安全提取置信度 (第5列，索引4)
-                    confidence = float(detection[4])
-                    
-                    if confidence > self.conf_threshold:
-                        # 安全提取边框坐标 (前4列)
-                        x_center = float(detection[0]) * x_scale
-                        y_center = float(detection[1]) * y_scale  
-                        width = float(detection[2]) * x_scale
-                        height = float(detection[3]) * y_scale
+            # YOLOv5 anchor设置 (这里使用标准的anchors)
+            # 对于20x20的输出，这通常对应大目标的检测
+            anchors = np.array([
+                [116, 90], [156, 198], [373, 326]  # 大目标anchors
+            ])
+            
+            num_anchors = len(anchors)
+            stride = self.input_size[0] // grid_w  # 640 / 20 = 32
+            
+            for anchor_idx in range(num_anchors):
+                for gy in range(grid_h):
+                    for gx in range(grid_w):
+                        # 计算在85维特征中的起始位置
+                        # 格式通常是: [x, y, w, h, conf, class1, class2, ...]
+                        base_idx = anchor_idx * (5 + num_classes)  # 每个anchor: 5 + 类别数
                         
-                        # 转换为左上角坐标
-                        x1 = int(x_center - width / 2)
-                        y1 = int(y_center - height / 2)
-                        x2 = int(x_center + width / 2)
-                        y2 = int(y_center + height / 2)
-                        
-                        # 获取最高分类别 (第6列开始)
-                        class_scores = detection[5:]
-                        class_id = int(np.argmax(class_scores))
-                        class_score = float(class_scores[class_id])
-                        
-                        final_score = confidence * class_score
-                        
-                        if final_score > self.conf_threshold:
-                            boxes.append([x1, y1, x2, y2])
-                            scores.append(final_score)
-                            class_ids.append(class_id)
+                        if base_idx + 4 >= num_channels:
+                            continue
                             
-                except Exception as e:
-                    # 跳过有问题的检测结果
-                    if i < 5:  # 只显示前几个错误
-                        print(f"   跳过检测{i}: {e}")
-                    continue
+                        try:
+                            # 提取基础预测值
+                            pred_x = float(feature_map[base_idx + 0, gy, gx])
+                            pred_y = float(feature_map[base_idx + 1, gy, gx])
+                            pred_w = float(feature_map[base_idx + 2, gy, gx])
+                            pred_h = float(feature_map[base_idx + 3, gy, gx])
+                            pred_conf = float(feature_map[base_idx + 4, gy, gx])
+                            
+                            # Sigmoid激活
+                            conf = 1.0 / (1.0 + np.exp(-pred_conf))
+                            
+                            if conf > self.conf_threshold:
+                                # 解码边框坐标
+                                x = (1.0 / (1.0 + np.exp(-pred_x)) + gx) * stride
+                                y = (1.0 / (1.0 + np.exp(-pred_y)) + gy) * stride
+                                w = anchors[anchor_idx][0] * np.exp(pred_w)
+                                h = anchors[anchor_idx][1] * np.exp(pred_h)
+                                
+                                # 转换为图像坐标
+                                x *= x_scale
+                                y *= y_scale
+                                w *= x_scale
+                                h *= y_scale
+                                
+                                # 转换为左上角坐标
+                                x1 = int(x - w / 2)
+                                y1 = int(y - h / 2)
+                                x2 = int(x + w / 2)
+                                y2 = int(y + h / 2)
+                                
+                                # 边界检查
+                                x1 = max(0, min(x1, original_shape[1]))
+                                y1 = max(0, min(y1, original_shape[0]))
+                                x2 = max(0, min(x2, original_shape[1]))
+                                y2 = max(0, min(y2, original_shape[0]))
+                                
+                                if x2 > x1 and y2 > y1:  # 有效边框
+                                    # 提取类别分数
+                                    best_class = 0
+                                    best_class_score = 0
+                                    
+                                    for class_idx in range(num_classes):
+                                        if base_idx + 5 + class_idx < num_channels:
+                                            class_score = float(feature_map[base_idx + 5 + class_idx, gy, gx])
+                                            class_score = 1.0 / (1.0 + np.exp(-class_score))  # sigmoid
+                                            
+                                            if class_score > best_class_score:
+                                                best_class_score = class_score
+                                                best_class = class_idx
+                                    
+                                    final_score = conf * best_class_score
+                                    
+                                    if final_score > self.conf_threshold:
+                                        boxes.append([x1, y1, x2, y2])
+                                        scores.append(final_score)
+                                        class_ids.append(best_class)
+                                        
+                        except Exception as e:
+                            continue  # 跳过有问题的检测
             
             # NMS去重
             if len(boxes) > 0:
                 try:
+                    # 记录检测到的目标数量
+                    if not hasattr(self, '_detection_count'):
+                        self._detection_count = 0
+                    self._detection_count += len(boxes)
+                    
+                    if len(boxes) <= 50:  # 只在检测数量不多时显示
+                        print(f"   检测到 {len(boxes)} 个潜在目标")
+                    
                     indices = cv2.dnn.NMSBoxes(boxes, scores, self.conf_threshold, self.nms_threshold)
                     
                     final_boxes = []
@@ -241,12 +291,20 @@ class RKNNFireDetector:
                             final_boxes.append(boxes[i])
                             final_scores.append(scores[i])
                             final_class_ids.append(class_ids[i])
+                        
+                        if len(final_boxes) > 0:
+                            print(f"   NMS后保留 {len(final_boxes)} 个目标")
                     
                     return final_boxes, final_scores, final_class_ids
+                    
                 except Exception as nms_e:
                     print(f"NMS处理错误: {nms_e}")
-                    # 如果NMS失败，返回原始检测结果（限制数量）
-                    return boxes[:10], scores[:10], class_ids[:10]
+                    # 如果NMS失败，返回前10个最高分的检测结果
+                    if len(boxes) > 0:
+                        sorted_indices = np.argsort(scores)[::-1][:10]
+                        return [boxes[i] for i in sorted_indices], \
+                               [scores[i] for i in sorted_indices], \
+                               [class_ids[i] for i in sorted_indices]
             
         except Exception as e:
             print(f"后处理错误: {e}")
