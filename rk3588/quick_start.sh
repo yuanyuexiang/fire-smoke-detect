@@ -87,10 +87,11 @@ echo "🧪 步骤4: 选择测试方式..."
 echo "请选择要测试的输入源:"
 echo "1) 本地摄像头 (USB/CSI)"
 echo "2) RTSP网络摄像头"
-echo "3) 跳过测试，直接启动服务"
-echo "4) 仅显示状态信息"
+echo "3) RKNN环境诊断 (推荐先执行)"
+echo "4) 跳过测试，直接启动服务"
+echo "5) 仅显示状态信息"
 
-read -p "请输入选项 (1-4): " choice
+read -p "请输入选项 (1-5): " choice
 
 case $choice in
     1)
@@ -100,14 +101,20 @@ case $choice in
     2)
         echo "📡 测试RTSP摄像头..."
         echo "请输入RTSP地址 (回车使用默认):"
-        read -p "[默认: rtsp://admin:matrix@192.168.86.32:554/Streaming/Channels/102]: " rtsp_url
-        rtsp_url=${rtsp_url:-"rtsp://admin:matrix@192.168.86.32:554/Streaming/Channels/102"}
+        read -p "[默认: rtsp://admin:sual116y@192.168.86.19:554/Streaming/Channels/102]: " rtsp_url
+        rtsp_url=${rtsp_url:-"rtsp://admin:sual116y@192.168.86.19:554/Streaming/Channels/102"}
         python3 detect_rknn.py --source "$rtsp_url" --weights models/best_final_clean.rknn --conf 0.5 --img-size 640
         ;;
     3)
-        echo "⏭️  跳过测试"
+        echo "🔍 运行RKNN环境诊断..."
+        python3 diagnose_rknn.py
+        echo ""
+        echo "如果诊断通过，可以继续测试检测功能"
         ;;
     4)
+        echo "⏭️  跳过测试"
+        ;;
+    5)
         echo "📊 显示系统状态"
         echo "系统信息:"
         uname -a
@@ -117,6 +124,9 @@ case $choice in
         free -h
         echo "存储使用:"
         df -h .
+        echo "NPU设备检查:"
+        ls -la /dev/rknpu* 2>/dev/null || echo "未找到NPU设备文件"
+        ls -la /dev/dri/renderD* 2>/dev/null || echo "未找到DRI设备文件"
         exit 0
         ;;
     *)
