@@ -160,7 +160,7 @@ class RKNNFireDetector:
         return input_image
     
     def postprocess(self, outputs, original_shape):
-        """后处理，解析RKNN输出 - YOLOv5特征图格式"""
+        """后处理，解析RKNN输出 - 简化直接版本"""
         try:
             # 调试输出格式信息
             if not hasattr(self, '_first_run'):
@@ -170,142 +170,145 @@ class RKNNFireDetector:
                 self._first_run = True
             
             # YOLOv5输出格式: (1, 85, 20, 20) 
-            # 这是特征图格式，需要进行anchor-based解码
             feature_map = outputs[0]  # (1, 85, 20, 20)
             
             # 移除batch维度
             if len(feature_map.shape) == 4:
                 feature_map = feature_map[0]  # (85, 20, 20)
             
-            num_classes = 2  # fire, smoke
-            grid_h, grid_w = feature_map.shape[1], feature_map.shape[2]
-            num_channels = feature_map.shape[0]  # 85
-            
-            # 解析预测结果
             boxes = []
             scores = []
             class_ids = []
             
             h, w = original_shape[:2]
-            x_scale = w / self.input_size[0]  # 640
-            y_scale = h / self.input_size[1]  # 640
+            grid_h, grid_w = feature_map.shape[1], feature_map.shape[2]  # 20, 20
             
-            # YOLOv5 anchor设置 (这里使用标准的anchors)
-            # 对于20x20的输出，这通常对应大目标的检测
-            anchors = np.array([
-                [116, 90], [156, 198], [373, 326]  # 大目标anchors
-            ])
+            # 简化方法：直接扫描可能的置信度通道
+            # 通常在YOLOv5中，每个anchor的置信度在特定位置
+            confidence_channels = [4, 9, 14]  # 假设3个anchor，每个占5+num_classes个通道
             
-            num_anchors = len(anchors)
-            stride = self.input_size[0] // grid_w  # 640 / 20 = 32
-            
-            for anchor_idx in range(num_anchors):
-                for gy in range(grid_h):
-                    for gx in range(grid_w):
-                        # 计算在85维特征中的起始位置
-                        # 格式通常是: [x, y, w, h, conf, class1, class2, ...]
-                        base_idx = anchor_idx * (5 + num_classes)  # 每个anchor: 5 + 类别数
+            for ch_idx, conf_channel in enumerate(confidence_channels):
+                if conf_channel >= feature_map.shape[0]:
+                    continue
+                    
+                # 获取置信度图
+                conf_map = feature_map[conf_channel]  # (20, 20)
+                
+                # 应用sigmoid激活
+                conf_map_sigmoid = 1.0 / (1.0 + np.exp(-conf_map))
+                
+                # 找到高置信度位置
+                high_conf_mask = conf_map_sigmoid > self.conf_threshold
+                high_conf_positions = np.where(high_conf_mask)
+                
+                print(f"   通道{conf_channel}: 找到{len(high_conf_positions[0])}个高置信度位置")
+                
+                for gy, gx in zip(high_conf_positions[0], high_conf_positions[1]):
+                    confidence = float(conf_map_sigmoid[gy, gx])
+                    
+                    # 获取对应的坐标信息（如果存在）
+                    base_ch = ch_idx * (5 + 2)  # 假设每个anchor: x,y,w,h,conf,class1,class2
+                    
+                    try:
+                        # 计算边框位置（简化版）
+                        stride = 640 // grid_w  # 32
                         
-                        if base_idx + 4 >= num_channels:
-                            continue
+                        # 从特征图获取预测坐标
+                        if base_ch + 3 < feature_map.shape[0]:
+                            pred_x = feature_map[base_ch + 0, gy, gx]
+                            pred_y = feature_map[base_ch + 1, gy, gx] 
+                            pred_w = feature_map[base_ch + 2, gy, gx]
+                            pred_h = feature_map[base_ch + 3, gy, gx]
                             
-                        try:
-                            # 提取基础预测值
-                            pred_x = float(feature_map[base_idx + 0, gy, gx])
-                            pred_y = float(feature_map[base_idx + 1, gy, gx])
-                            pred_w = float(feature_map[base_idx + 2, gy, gx])
-                            pred_h = float(feature_map[base_idx + 3, gy, gx])
-                            pred_conf = float(feature_map[base_idx + 4, gy, gx])
+                            # 简单的坐标解码
+                            center_x = (gx + 0.5) * stride
+                            center_y = (gy + 0.5) * stride
                             
-                            # Sigmoid激活
-                            conf = 1.0 / (1.0 + np.exp(-pred_conf))
+                            # 使用固定大小或基于预测的大小
+                            box_w = min(stride * 3, w * 0.1)  # 限制最大大小
+                            box_h = min(stride * 3, h * 0.1)
                             
-                            if conf > self.conf_threshold:
-                                # 解码边框坐标
-                                x = (1.0 / (1.0 + np.exp(-pred_x)) + gx) * stride
-                                y = (1.0 / (1.0 + np.exp(-pred_y)) + gy) * stride
-                                w = anchors[anchor_idx][0] * np.exp(pred_w)
-                                h = anchors[anchor_idx][1] * np.exp(pred_h)
-                                
-                                # 转换为图像坐标
-                                x *= x_scale
-                                y *= y_scale
-                                w *= x_scale
-                                h *= y_scale
-                                
-                                # 转换为左上角坐标
-                                x1 = int(x - w / 2)
-                                y1 = int(y - h / 2)
-                                x2 = int(x + w / 2)
-                                y2 = int(y + h / 2)
-                                
-                                # 边界检查
-                                x1 = max(0, min(x1, original_shape[1]))
-                                y1 = max(0, min(y1, original_shape[0]))
-                                x2 = max(0, min(x2, original_shape[1]))
-                                y2 = max(0, min(y2, original_shape[0]))
-                                
-                                if x2 > x1 and y2 > y1:  # 有效边框
-                                    # 提取类别分数
-                                    best_class = 0
-                                    best_class_score = 0
-                                    
-                                    for class_idx in range(num_classes):
-                                        if base_idx + 5 + class_idx < num_channels:
-                                            class_score = float(feature_map[base_idx + 5 + class_idx, gy, gx])
-                                            class_score = 1.0 / (1.0 + np.exp(-class_score))  # sigmoid
-                                            
-                                            if class_score > best_class_score:
-                                                best_class_score = class_score
-                                                best_class = class_idx
-                                    
-                                    final_score = conf * best_class_score
-                                    
-                                    if final_score > self.conf_threshold:
-                                        boxes.append([x1, y1, x2, y2])
-                                        scores.append(final_score)
-                                        class_ids.append(best_class)
-                                        
-                        except Exception as e:
-                            continue  # 跳过有问题的检测
+                        else:
+                            # 如果没有坐标信息，使用网格中心和固定大小
+                            stride = 640 // grid_w  # 32
+                            center_x = (gx + 0.5) * stride
+                            center_y = (gy + 0.5) * stride
+                            box_w = stride * 2
+                            box_h = stride * 2
+                        
+                        # 转换到原图尺寸
+                        center_x = center_x * w / 640
+                        center_y = center_y * h / 640
+                        box_w = box_w * w / 640
+                        box_h = box_h * h / 640
+                        
+                        # 计算边框
+                        x1 = int(max(0, center_x - box_w/2))
+                        y1 = int(max(0, center_y - box_h/2))
+                        x2 = int(min(w, center_x + box_w/2))
+                        y2 = int(min(h, center_y + box_h/2))
+                        
+                        if x2 > x1 and y2 > y1:
+                            boxes.append([x1, y1, x2, y2])
+                            scores.append(confidence)
+                            
+                            # 简单的类别分配
+                            class_id = ch_idx % 2  # 0=fire, 1=smoke
+                            class_ids.append(class_id)
+                            
+                    except Exception as coord_e:
+                        print(f"   坐标解码错误: {coord_e}")
+                        continue
             
-            # NMS去重
+            # 输出检测统计
             if len(boxes) > 0:
+                print(f"   原始检测: {len(boxes)}个目标")
+                
+                # 简单NMS
                 try:
-                    # 记录检测到的目标数量
-                    if not hasattr(self, '_detection_count'):
-                        self._detection_count = 0
-                    self._detection_count += len(boxes)
-                    
-                    if len(boxes) <= 50:  # 只在检测数量不多时显示
-                        print(f"   检测到 {len(boxes)} 个潜在目标")
-                    
-                    indices = cv2.dnn.NMSBoxes(boxes, scores, self.conf_threshold, self.nms_threshold)
-                    
-                    final_boxes = []
-                    final_scores = []
-                    final_class_ids = []
+                    indices = cv2.dnn.NMSBoxes(boxes, scores, self.conf_threshold, 0.4)
                     
                     if len(indices) > 0:
-                        for i in indices.flatten():
-                            final_boxes.append(boxes[i])
-                            final_scores.append(scores[i])
-                            final_class_ids.append(class_ids[i])
+                        final_boxes = [boxes[i] for i in indices.flatten()]
+                        final_scores = [scores[i] for i in indices.flatten()]
+                        final_class_ids = [class_ids[i] for i in indices.flatten()]
                         
-                        if len(final_boxes) > 0:
-                            print(f"   NMS后保留 {len(final_boxes)} 个目标")
-                    
-                    return final_boxes, final_scores, final_class_ids
+                        print(f"   NMS后保留: {len(final_boxes)}个目标")
+                        return final_boxes, final_scores, final_class_ids
                     
                 except Exception as nms_e:
-                    print(f"NMS处理错误: {nms_e}")
-                    # 如果NMS失败，返回前10个最高分的检测结果
-                    if len(boxes) > 0:
-                        sorted_indices = np.argsort(scores)[::-1][:10]
-                        return [boxes[i] for i in sorted_indices], \
-                               [scores[i] for i in sorted_indices], \
-                               [class_ids[i] for i in sorted_indices]
-            
+                    print(f"   NMS错误: {nms_e}, 返回原始结果")
+                    return boxes[:5], scores[:5], class_ids[:5]  # 限制返回数量
+            else:
+                print(f"   未检测到目标 (阈值={self.conf_threshold})")
+                
+        except Exception as e:
+            print(f"后处理错误: {e}")
+            import traceback
+            traceback.print_exc()
+        
+            # 输出检测统计
+            if len(boxes) > 0:
+                print(f"   原始检测: {len(boxes)}个目标")
+                
+                # 简单NMS
+                try:
+                    indices = cv2.dnn.NMSBoxes(boxes, scores, self.conf_threshold, 0.4)
+                    
+                    if len(indices) > 0:
+                        final_boxes = [boxes[i] for i in indices.flatten()]
+                        final_scores = [scores[i] for i in indices.flatten()]
+                        final_class_ids = [class_ids[i] for i in indices.flatten()]
+                        
+                        print(f"   NMS后保留: {len(final_boxes)}个目标")
+                        return final_boxes, final_scores, final_class_ids
+                    
+                except Exception as nms_e:
+                    print(f"   NMS错误: {nms_e}, 返回原始结果")
+                    return boxes[:5], scores[:5], class_ids[:5]  # 限制返回数量
+            else:
+                print(f"   未检测到目标 (阈值={self.conf_threshold})")
+                
         except Exception as e:
             print(f"后处理错误: {e}")
             import traceback
